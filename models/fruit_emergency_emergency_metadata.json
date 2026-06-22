@@ -1,0 +1,35 @@
+{
+  "mode": "emergency_finetune",
+  "created_at": "2026-06-22T20:08:13",
+  "output_model": "D:\\ruikang\\paidaxiong\\models\\fruit_emergency.pt",
+  "output_backup_model": "",
+  "deployed_model": "",
+  "deploy_backup_model": "",
+  "base_model": "models/fruit_best.pt",
+  "photos": "data\\emergency_photos",
+  "dataset": "D:\\ruikang\\paidaxiong\\runs\\emergency_datasets\\20260622_195146",
+  "data_yaml": "D:\\ruikang\\paidaxiong\\runs\\emergency_datasets\\20260622_195146\\fruit_emergency.yaml",
+  "run_dir": "D:\\ruikang\\paidaxiong\\runs\\train\\emergency_finetune_20260622_195217",
+  "classes": [
+    "apple",
+    "banana",
+    "grape",
+    "strawberry"
+  ],
+  "counts": {
+    "emergency_train": 269,
+    "emergency_val": 90,
+    "base_train": 185,
+    "base_val": 55,
+    "total_train": 454,
+    "total_val": 145
+  },
+  "epochs": 18,
+  "imgsz": 640,
+  "batch": 6,
+  "device": "cpu",
+  "auto_label": "center",
+  "box_ratio": 0.72,
+  "lr0": 0.002,
+  "freeze": 10
+}
