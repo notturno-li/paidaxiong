@@ -1,19 +1,19 @@
-# RAICOM 2026 黑龙江赛区机器视觉分拣赛配置
-mode: hardware # simulation / hardware
-
+mode: hardware
 camera:
   width: 640
   height: 480
   fps: 30
   min_valid_depth_mm: 150
   max_valid_depth_mm: 900
-
 model:
   weights: models/fruit_best.pt
   fallback_weights: models/yolov8s.pt
   conf_threshold: 0.45
-  class_names: [apple, banana, grape, strawberry]
-
+  class_names:
+    - apple
+    - banana
+    - grape
+    - strawberry
 robot:
   ip: 192.168.5.1
   dashboard_port: 29999
@@ -21,24 +21,67 @@ robot:
   request_control_before_enable: true
   user: 0
   tool: 0
-  speed_percent: 25
+  speed_percent: 60
   accel_percent: 25
   safe_z_mm: 180.0
   grasp_clearance_mm: 18.0
   suction_tool_do: 1
   suction_do: 1
-  suction_io_type: both # tool_do / do / both，ES01接控制柜DO时用do或both
+  suction_io_type: tool_do
   suction_on_level: 1
   suction_off_level: 0
-  emergency_stop_mode: stop # stop / emergency_stop
-  home_pose: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
-  fixed_test_pose: [289.1093, -266.8951, 98.6003, 178.0137, -0.8, -34.75]
+  emergency_stop_mode: stop
+  # ── 抓取防撞 & 高度补偿 ────────────────────────────────────────
+  min_grasp_z_mm: 80.0 # 安全地板：base_Z 永远不低于此值(mm)，防止扎桌面
+  descend_speed_percent: 8 # 慢速下降速度(%)，全速太冲会撞轴
+  descend_accel_percent: 10 # 慢速下降加速度(%)
+  grasp_x_offset_mm: 2.0 # 系统性 X 补偿(mm)，正值=朝基座X正向偏移
+  grasp_y_offset_mm: 5.0 # 系统性 Y 补偿(mm)，正值=朝基座Y正向偏移
+  grasp_z_offset_mm: 65.0 # 系统性 Z 补偿(mm)，正值=抬高。当前标定残差约+35mm
+  # ─────────────────────────────────────────────────────────────
+  home_pose:
+    - 97.7272
+    - -58.4709
+    - 391.6195
+    - -175.1819
+    - -0.4664
+    - 2.6347
+  fixed_test_pose:
+    - 248.9071
+    - -10.8889
+    - 94.5066
+    - 178.3255
+    - 1.3605
+    - 9.6759
   bins:
-    apple: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
-    banana: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
-    strawberry: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
-    grape: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
-
+    apple:
+      - 37.2021
+      - -187.0169
+      - 237.7972
+      - -174.2006
+      - -10.6453
+      - -62.3152
+    banana:
+      - 175.0429
+      - -210.1591
+      - 302.7621
+      - -179.5378
+      - 1.042
+      - -40.2334
+    strawberry:
+      - 281.0273
+      - -176.4927
+      - 305.7494
+      - 179.7916
+      - -2.826
+      - -25.4661
+    grape:
+      - 191.5026
+      - 79.4921
+      - 371.5633
+      - -179.1731
+      - -0.2445
+      - 14.3629
 calibration:
   hand_eye_yaml: configs/20260610.yaml
   camera_matrix:
@@ -47,18 +90,31 @@ calibration:
     cx: 320.0
     cy: 240.0
   transform_camera_to_gripper:
-    - [0.7218742278, 0.6919286206, -0.0115057948, -72.7322748581]
-    - [-0.6919621455, 0.7219324330, 0.0013969538, -38.3275375922]
-    - [0.0092729987, 0.0069531495, 0.9999328303, 24.3234046605]
+    - [
+        0.03552847956316163,
+        -0.9991690725751087,
+        0.019972269508678343,
+        79.23748534601955,
+      ]
+    - [
+        0.9992941061724562,
+        0.03576284807637453,
+        0.011502524351559042,
+        -26.9272011352719,
+      ]
+    - [
+        -0.012207231828799119,
+        0.019549504005560988,
+        0.999734364911107,
+        12.215645207203266,
+      ]
     - [0.0, 0.0, 0.0, 1.0]
-
 height:
   table_depth_mm: 420.0
   roi_ratio: 0.35
   min_height_mm: 15.0
-  max_height_mm: 60.0
+  max_height_mm: 600.0
   smoothing_window: 5
-
 workflow:
   auto_max_objects: 4
   auto_empty_frames_to_finish: 8

@@ -14,9 +14,9 @@ from app.core.robot_client import DobotClient
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="测试吸盘IO：支持 ToolDOInstant / DOInstant / both")
-    parser.add_argument("--io-type", choices=["tool_do", "do", "both"], default=None)
-    parser.add_argument("--index", type=int, default=None, help="同时覆盖 suction_tool_do 与 suction_do")
+    parser = argparse.ArgumentParser(description="测试吸盘IO：末端 ToolDOInstant")
+    parser.add_argument("--io-type", choices=["tool_do"], default=None)
+    parser.add_argument("--index", type=int, default=None, help="覆盖 suction_tool_do")
     parser.add_argument("--seconds", type=float, default=2.0)
     args = parser.parse_args()
 
@@ -26,7 +26,6 @@ def main() -> int:
         config["robot"]["suction_io_type"] = args.io_type
     if args.index is not None:
         config["robot"]["suction_tool_do"] = args.index
-        config["robot"]["suction_do"] = args.index
 
     client = DobotClient(config, simulation=False)
     client.connect()

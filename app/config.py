@@ -12,6 +12,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "ip": "192.168.5.1", "dashboard_port": 29999, "connect_timeout_s": 2.0,
         "user": 0, "tool": 0, "speed_percent": 25, "accel_percent": 25,
         "safe_z_mm": 180.0, "grasp_clearance_mm": 18.0, "suction_tool_do": 1,
+        "min_grasp_z_mm": 60.0, "descend_speed_percent": 8, "descend_accel_percent": 10,
+        "grasp_x_offset_mm": 0.0, "grasp_y_offset_mm": 0.0, "grasp_z_offset_mm": 0.0,
+        "suction_settle_s": 0.5,
+        "suction_release_settle_s": 0.3,
+        "motion_done_timeout_s": 30.0,
+        "motion_done_poll_s": 0.1,
+        "motion_done_xyz_tol_mm": 2.0,
+        "motion_done_rpy_tol_deg": 3.0,
+        "suction_io_type": "tool_do",
         "home_pose": [260.0, 0.0, 180.0, 180.0, 0.0, 0.0],
         "fixed_test_pose": [240.0, -80.0, 160.0, 180.0, 0.0, 0.0],
         "bins": {
@@ -31,7 +40,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
             [0.0, 0.0, 0.0, 1.0],
         ],
     },
-    "height": {"table_depth_mm": 420.0, "roi_ratio": 0.35, "min_height_mm": 15.0, "max_height_mm": 60.0, "smoothing_window": 5},
+    "height": {
+        "table_depth_mm": 420.0, "roi_ratio": 0.35, "min_height_mm": 15.0, "max_height_mm": 60.0, "smoothing_window": 5,
+        "plane_inlier_mm": 8.0, "plane_ransac_iters": 120, "plane_sample_points": 4000,
+        "plane_top_percentile": 70.0,
+    },
     "workflow": {"auto_max_objects": 4, "auto_empty_frames_to_finish": 8, "command_json_log": True},
 }
 

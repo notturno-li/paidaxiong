@@ -33,7 +33,15 @@ class CoordinateTransformer:
         self.t_camera_to_gripper = self._load_hand_eye_matrix()
 
     def _load_hand_eye_matrix(self) -> np.ndarray:
-        fallback = np.array(self.config["calibration"]["transform_camera_to_gripper"], dtype=float)
+        raw = self.config["calibration"].get("transform_camera_to_gripper")
+        if raw is not None:
+            try:
+                arr = np.array(raw, dtype=float)
+                if arr.shape == (4, 4):
+                    return arr
+            except Exception:
+                pass
+        fallback = np.eye(4)
         yaml_path = Path(self.config["calibration"].get("hand_eye_yaml", ""))
         if not yaml_path.exists():
             yaml_path = Path(__file__).resolve().parents[2] / yaml_path
@@ -54,6 +62,10 @@ class CoordinateTransformer:
         x = (float(u) - intrinsics.cx) * z / intrinsics.fx
         y = (float(v) - intrinsics.cy) * z / intrinsics.fy
         return x, y, z
+
+    def camera_to_base_matrix(self, flange_pose: list[float]) -> np.ndarray:
+        t_base_to_gripper = pose_to_matrix(flange_pose)
+        return t_base_to_gripper @ self.t_camera_to_gripper
 
     def camera_to_base_pose(self, camera_xyz_mm: tuple[float, float, float], flange_pose: list[float], target_rpy: list[float] | None = None) -> list[float]:
         t_base_to_gripper = pose_to_matrix(flange_pose)

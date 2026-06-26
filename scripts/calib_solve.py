@@ -5,25 +5,44 @@ import os, glob, math  # 负责文件路径读取和基础数学(弧度转换)
 # ==============================================================================
 # 模块一：全局物理参数锁死区 (零误差的前提)
 # ==============================================================================
-# 【物理原理】：OpenCV 标定算法寻找的是黑白方块交汇的“十字内角点”，而不是方块本身。
+# 【物理原理】：OpenCV 标定算法寻找的是黑白方块交汇的"十字内角点"，而不是方块本身。
 # 你打印的是 8行11列 的方块，因此内角点必须是 (11, 8)。(OpenCV 习惯宽X在前，高Y在后)
 CHECKERBOARD = (8, 11)
 
 # 【绝对尺度】：单个方格的物理真实边长，单位：毫米(mm)。
-# 视觉本身是没有“大小”概念的，全靠这个数值给系统注入真实的物理世界尺度。
+# 视觉本身是没有"大小"概念的，全靠这个数值给系统注入真实的物理世界尺度。
 SQUARE_SIZE = 10.0
 
-IMAGE_DIR = "calib_data/images/"
-POSE_DIR = "calib_data/poses/"
+IMAGE_DIR = "runs/calib_data/images/"
+POSE_DIR = "runs/calib_data/poses/"
 
-# 【相机内参矩阵 (Camera Matrix)】：这是相机的“视网膜参数”
-# fx, fy (910.0) 是焦距，决定了物体在画面中的缩放比例。
-# cx, cy (640.0, 360.0) 是光学中心，通常在 1280x720 画面的正中央。
-# ⚠️ 在真实工业现场，此矩阵应通过张正友标定法专门求出，此处使用 D435 标准参考值。
-camera_matrix = np.array([[910.0, 0.0, 640.0],
-                          [0.0, 910.0, 360.0],
-                          [0.0, 0.0, 1.0]], dtype=np.float64)
-dist_coeffs = np.zeros((5, 1))  # 假设已做畸变校正
+# 【关键】：内参分辨率必须与采集图像分辨率完全一致！
+# 采集脚本(calib_collect.py / calib_collect_auto.py)用的是 1280x720，
+# 这里若用 640x480 读内参，fx/fy/主点全错一倍，PnP 会系统性失真 → 标定误差爆炸。
+CAMERA_WIDTH = 1280
+CAMERA_HEIGHT = 720
+
+# 【相机内参矩阵】：自动从 D435 硬件读取，保证与采集时一致
+# 如果相机未连接，则使用下方兜底值(1280x720 下的典型值)
+try:
+    import pyrealsense2 as rs
+    _pipeline = rs.pipeline()
+    _cfg = rs.config()
+    _cfg.enable_stream(rs.stream.color, CAMERA_WIDTH, CAMERA_HEIGHT, rs.format.bgr8, 30)
+    _profile = _pipeline.start(_cfg)
+    _intr = _profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+    camera_matrix = np.array([[_intr.fx, 0.0, _intr.ppx],
+                              [0.0, _intr.fy, _intr.ppy],
+                              [0.0, 0.0, 1.0]], dtype=np.float64)
+    dist_coeffs = np.array([[c] for c in _intr.coeffs], dtype=np.float64)
+    _pipeline.stop()
+    print(f"[内参] 已从 D435 硬件读取 ({CAMERA_WIDTH}x{CAMERA_HEIGHT}): fx={_intr.fx:.2f} fy={_intr.fy:.2f} cx={_intr.ppx:.2f} cy={_intr.ppy:.2f}")
+except Exception as _e:
+    print(f"[内参] D435 未连接，使用 1280x720 兜底值: {_e}")
+    camera_matrix = np.array([[1212.0, 0.0, 636.0],
+                              [0.0, 1212.0, 500.0],
+                              [0.0, 0.0, 1.0]], dtype=np.float64)
+    dist_coeffs = np.zeros((5, 1), dtype=np.float64)
 
 
 # ==============================================================================
@@ -36,7 +55,7 @@ def txt_to_matrix(txt_path):
     【为什么要有这个函数？】
     机械臂示教器上显示的是人类看得懂的欧拉角 (比如倾斜了 15 度：Rx=15)。
     但是，计算机底层的 Tsai-Lenz 算法不认识度数，它只认识 3x3 的旋转矩阵。
-    此函数就是连接机械臂物理世界和 OpenCV 数学世界的“翻译官”。
+    此函数就是连接机械臂物理世界和 OpenCV 数学世界的"翻译官"。
     """
     with open(txt_path, 'r') as f:
         data = f.read().replace(',', ' ').split()
@@ -44,7 +63,7 @@ def txt_to_matrix(txt_path):
     # 1. 提取平移向量 Translation (X, Y, Z)，单位：毫米
     t_vec = np.array([[float(data[0])], [float(data[1])], [float(data[2])]])
 
-    # 2. 将欧拉角从“度(Degree)”转换为“弧度(Radian)” (计算机三角函数只认弧度)
+    # 2. 将欧拉角从"度(Degree)"转换为"弧度(Radian)" (计算机三角函数只认弧度)
     rx, ry, rz = map(math.radians, [float(data[3]), float(data[4]), float(data[5])])
 
     # 3. 构建三个基础旋转矩阵
@@ -128,14 +147,6 @@ for img_path in img_files:
 # ==============================================================================
 print(f"⚙️ [数学引擎] 数据就绪。正在启动 Tsai-Lenz 算法破解 AX=XB 方程组...")
 
-# 【Tsai-Lenz 算法原理】：
-# 目标：解方程 A * X = X * B
-# 痛点：X 是一个包含旋转和平移的 4x4 矩阵，直接解极其困难。
-# Tsai 的智慧：分而治之！
-# 1. 先利用机械臂的旋转轴和相机相对旋转轴在空间中平行的原理，建立线性方程，用最小二乘法解出 3x3 旋转矩阵 R_X。
-# 2. 将 R_X 代入原方程，未知数只剩平移，瞬间变成一元一次方程组，再次用最小二乘法解出平移向量 t_X。
-# 优势：无须非线性迭代猜测，运算速度极快，且能平均抵消掉你手动采数据时的微小误差。
-
 R_cam2grip, t_cam2grip = cv2.calibrateHandEye(
     R_gripper2base, t_gripper2base,
     R_target2cam, t_target2cam,
@@ -145,22 +156,87 @@ R_cam2grip, t_cam2grip = cv2.calibrateHandEye(
 # ==============================================================================
 # 模块五：组装与下发 4x4 齐次变换矩阵
 # ==============================================================================
-# 【齐次变换矩阵 (Homogeneous Transformation Matrix) 结构科普】：
-# 它是一个 4x4 的方阵，工业机器人坐标系转换的通用语言。
-# [ R11 R12 R13  Tx ]  <-- 左上 3x3 是旋转矩阵 (Rotation)
-# [ R21 R22 R23  Ty ]  <-- 右上 3x1 是平移向量 (Translation)
-# [ R31 R32 R33  Tz ]
-# [  0   0   0   1  ]  <-- 底部是为了能做矩阵乘法而补充的数学占位符
-
 T_matrix = np.eye(4)  # 先生成一个 4x4 的对角线为1的单位矩阵
 T_matrix[:3, :3] = R_cam2grip  # 把求出来的 3x3 旋转矩阵塞进左上角
 T_matrix[:3, 3] = t_cam2grip.flatten()  # 把求出来的平移塞进右上角
 
-print("\n🎯 标定圆满成功！相机的“灵魂”已完美映射到机械臂的躯干上。")
+print("\n Hand-eye calibration done!")
 print("👇 终极 4x4 手眼变换矩阵 (T_cam_to_gripper) 如下：")
 print(np.round(T_matrix, 4))
 
+# ==============================================================================
+# 模块五点五：标定误差评估 (闭环一致性验证)
+# ==============================================================================
+# 【原理】：标定板被螺丝拧死在桌面上，它在机械臂【基座坐标系】下的位姿是恒定不变的。
+# 对每一组采样，理论上：T_target2base = T_gripper2base @ X @ T_target2cam 都应当完全相等。
+# 因此把每组算出的 T_target2base 收集起来，统计它们之间的离散程度：
+#   - 平移离散越小 => 手眼平移标得越准 (单位 mm)
+#   - 旋转离散越小 => 手眼旋转标得越准 (单位 度)
+def _to_homo(R, t):
+    M = np.eye(4)
+    M[:3, :3] = R
+    M[:3, 3] = np.asarray(t, dtype=np.float64).flatten()
+    return M
+
+_X = _to_homo(R_cam2grip, t_cam2grip)
+_t2b = [_to_homo(Rg, tg) @ _X @ _to_homo(Rc, tc)
+        for Rg, tg, Rc, tc in zip(R_gripper2base, t_gripper2base, R_target2cam, t_target2cam)]
+
+# 平移误差：各组标定板原点相对于"均值位置"的偏差
+_trans = np.array([T[:3, 3] for T in _t2b])
+_trans_err = np.linalg.norm(_trans - _trans.mean(axis=0), axis=1)
+
+# 旋转误差：先用 SVD 求出平均旋转矩阵，再算各组相对均值的角度偏差
+_R_sum = sum(T[:3, :3] for T in _t2b)
+_U, _, _Vt = np.linalg.svd(_R_sum)
+_R_mean = _U @ _Vt
+if np.linalg.det(_R_mean) < 0:
+    _U[:, -1] *= -1
+    _R_mean = _U @ _Vt
+_rot_err = []
+for T in _t2b:
+    _ang = (np.trace(_R_mean.T @ T[:3, :3]) - 1) / 2
+    _rot_err.append(math.degrees(math.acos(max(-1.0, min(1.0, _ang)))))
+_rot_err = np.array(_rot_err)
+
+print("\n📏 [误差评估] 标定板在基座系下应恒定，离散度即标定误差：")
+print(f"   有效样本           : {len(_t2b)} 组")
+print(f"   平移误差 RMS       : {np.sqrt(np.mean(_trans_err ** 2)):.3f} mm")
+print(f"   平移误差 最大      : {_trans_err.max():.3f} mm")
+print(f"   旋转误差 RMS       : {np.sqrt(np.mean(_rot_err ** 2)):.4f} °")
+print(f"   旋转误差 最大      : {_rot_err.max():.4f} °")
+if np.sqrt(np.mean(_trans_err ** 2)) > 5.0:
+    print("   ⚠️ 平移误差偏大(>5mm)，建议检查采样姿态多样性或重新采集数据")
+
+# ==============================================================================
+# 模块六：导出标定结果
+# ==============================================================================
 # 导出供 GUI 控制总线直接调用
 output_file = 'hand_eye_result.yaml'
-cv2.FileStorage(output_file, cv2.FILE_STORAGE_WRITE).write("Transformation_Matrix", T_matrix).release()
-print(f"📦 已将矩阵打包导出至：{output_file}，部署完成！")
+fs = cv2.FileStorage(output_file, cv2.FILE_STORAGE_WRITE)
+fs.write("Transformation_Matrix", T_matrix)
+fs.release()
+print(f"Hand-eye matrix saved to: {output_file}")
+
+# Auto-update competition.yaml
+from pathlib import Path as _P
+import yaml as _y
+_cp = _P(__file__).resolve().parent.parent / 'configs' / 'competition.yaml'
+if _cp.exists():
+    try:
+        _cfg = _y.safe_load(_cp.read_text(encoding='utf-8')) or {}
+        _cfg.setdefault('calibration', {})
+
+        # 只让矩阵的每一行用流式(保留方括号、紧凑成一行)，其余配置仍是块式(无花括号)
+        class _FlowList(list):
+            pass
+        _y.add_representer(_FlowList,
+            lambda dumper, data: dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True))
+
+        _cfg['calibration']['transform_camera_to_gripper'] = [_FlowList(row) for row in T_matrix.tolist()]
+        _cp.write_text(_y.dump(_cfg, allow_unicode=True, sort_keys=False, default_flow_style=False), encoding='utf-8')
+        print(f"Hand-eye matrix written to {_cp}")
+    except Exception as e:
+        print(f"Failed to update competition.yaml: {e}")
+else:
+    print(f"Not found: {_cp}")
