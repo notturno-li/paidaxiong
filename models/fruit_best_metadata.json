@@ -1,11 +1,12 @@
 {
   "dataset": "D:\\ruikang\\paidaxiong\\data\\datasets_modified",
   "data_yaml": "D:\\ruikang\\paidaxiong\\configs\\fruit.yaml",
-  "source_model": "D:\\ruikang\\paidaxiong\\models\\yolov8n.pt",
-  "device": "cpu",
+  "source_model": "D:\\ruikang\\paidaxiong\\models\\yolov8s.pt",
+  "output_model": "D:\\ruikang\\paidaxiong\\models\\fruit_best.pt",
+  "device": "0",
   "epochs": 120,
   "imgsz": 640,
-  "batch": 8,
+  "batch": 16,
   "run_dir": "D:\\ruikang\\paidaxiong\\runs\\train\\fruit_yolov8_competition",
   "classes": [
     "apple",
