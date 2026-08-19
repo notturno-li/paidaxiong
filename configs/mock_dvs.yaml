@@ -1,0 +1,15 @@
+# 仅用于本机 TCP 联调，不是比赛现场端口。
+extends: national.yaml
+
+vision_studio:
+  mode: tcp_client
+  send_terminator: "\n"
+  receive_terminator: "\n"
+  tcp:
+    host: 127.0.0.1
+    port: 19001
+  protocol:
+    send_before_receive: true
+    exchange_command: RUN
+    delimiter: ","
+    response_fields: [status, x, y, z]

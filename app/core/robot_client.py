@@ -6,6 +6,8 @@ import threading
 import time
 from dataclasses import dataclass
 
+from .transform import matrix_to_pose, pose_to_matrix
+
 
 @dataclass
 class RobotReply:
@@ -77,6 +79,8 @@ class DobotClient:
                     index = self._parse_single_index(command)
                     value = self.tool_do_states.get(index, 0) if index is not None else 0
                     return RobotReply(0, [str(value)], f"0,{{{value}}},{command};")
+                if lower.startswith("robotmode"):
+                    return RobotReply(0, ["5" if self.enabled else "4"], f"0,{{{5 if self.enabled else 4}}},{command};")
                 if lower.startswith("getpose"):
                     values = [f"{value:.3f}" for value in self.current_pose]
                     return RobotReply(0, values, f"0,{{{','.join(values)}}},{command};")
@@ -266,14 +270,16 @@ class DobotClient:
     def build_grasp_sequence(self, grasp_pose: list[float], label: str) -> list[tuple[str, list[float] | bool]]:
         robot_cfg = self.config["robot"]
         safe_z = float(robot_cfg["safe_z_mm"])
-        clearance = float(robot_cfg["grasp_clearance_mm"])
+        slot_cfg = self._slot_config(label)
+        clearance = float(slot_cfg.get("approach_clearance_mm", robot_cfg["grasp_clearance_mm"]))
         suction_settle_s = float(robot_cfg.get("suction_settle_s", 0.5))
         suction_release_settle_s = float(robot_cfg.get("suction_release_settle_s", 0.3))
-        bin_pose = list(robot_cfg["bins"][label])
+        bin_pose = self.resolve_bin_pose(label)
         above_grasp = list(grasp_pose)
         above_grasp[2] = max(safe_z, grasp_pose[2] + clearance)
         above_bin = list(bin_pose)
         above_bin[2] = max(safe_z, bin_pose[2] + clearance)
+        mid_point = [-42.0607, 127.7290, 300.1738, 174.9587, -2.3124, 91.4916]
         # 【防撞下降】：先全速移动到抓取点正上方(above_grasp)，最后一段垂直下降改用 movl_slow 慢速逼近，
         # 避免全速直冲扎到物料/桌面造成机械臂轴碰撞。下降速度由 robot.descend_speed_percent 控制。
         return [
@@ -282,10 +288,69 @@ class DobotClient:
             ("suction", True),
             ("wait", suction_settle_s),
             ("movl", above_grasp),
+            ("movl", mid_point),
             ("movj", above_bin),
             ("movl_slow", bin_pose),
             ("suction", False),
             ("wait", suction_release_settle_s),
             ("movl", above_bin),
+            ("movj", list(robot_cfg["photo_pose"])),
+        ]
+
+    def _slot_config(self, label: str) -> dict:
+        slots = self.config.get("assembly", {}).get("slots", {})
+        value = slots.get(label, {}) if isinstance(slots, dict) else {}
+        return value if isinstance(value, dict) else {}
+
+    def has_target_pose(self, label: str) -> bool:
+        return label in self.config.get("robot", {}).get("bins", {}) or bool(self._slot_config(label))
+
+    def resolve_bin_pose(self, label: str) -> list[float]:
+        """Resolve a fixed target pose while accepting old and structured configs."""
+        assembly = self.config.get("assembly", {})
+        mode = str(assembly.get("target_mode", "fixed")).lower()
+        slot_cfg = self._slot_config(label)
+        raw = slot_cfg.get("tcp_pose") if slot_cfg else None
+        if raw is None and mode == "tray_frame" and slot_cfg:
+            frame_pose = assembly.get("frame_pose_base")
+            local_pose = slot_cfg.get("pose_tray")
+            if not isinstance(frame_pose, (list, tuple)) or len(frame_pose) != 6:
+                raise RuntimeError("assembly.target_mode=tray_frame 但 frame_pose_base 无效")
+            if not isinstance(local_pose, (list, tuple)) or len(local_pose) != 6:
+                raise RuntimeError(f"{label} 未配置有效的 pose_tray")
+            raw = matrix_to_pose(pose_to_matrix(frame_pose) @ pose_to_matrix(local_pose))
+        if raw is None:
+            raw = self.config["robot"].get("bins", {}).get(label)
+        if isinstance(raw, dict):
+            raw = raw.get("pose") or raw.get("tcp_pose")
+        if not isinstance(raw, (list, tuple)) or len(raw) != 6:
+            raise RuntimeError(f"未配置 {label} 的有效装配位姿")
+        if mode not in {"fixed", "tray_frame"}:
+            raise RuntimeError(f"不支持的装配目标模式: {mode}")
+        return [float(value) for value in raw]
+
+    def build_pick_place_sequence(
+        self,
+        pick_pose: list[float],
+        place_pose: list[float],
+    ) -> list[tuple[str, list[float] | bool]]:
+        robot_cfg = self.config["robot"]
+        safe_z = float(robot_cfg["safe_z_mm"])
+        clearance = float(robot_cfg["grasp_clearance_mm"])
+        above_pick = list(pick_pose)
+        above_pick[2] = max(safe_z, pick_pose[2] + clearance)
+        above_place = list(place_pose)
+        above_place[2] = max(safe_z, place_pose[2] + clearance)
+        return [
+            ("movj", above_pick),
+            ("movl_slow", list(pick_pose)),
+            ("suction", True),
+            ("wait", float(robot_cfg.get("suction_settle_s", 0.5))),
+            ("movl", above_pick),
+            ("movj", above_place),
+            ("movl_slow", list(place_pose)),
+            ("suction", False),
+            ("wait", float(robot_cfg.get("suction_release_settle_s", 0.3))),
+            ("movl", above_place),
             ("movj", list(robot_cfg["home_pose"])),
         ]

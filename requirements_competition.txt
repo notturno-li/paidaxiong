@@ -1,6 +1,7 @@
-numpy
-opencv-python
-PyQt5
-PyYAML
-ultralytics
-pyrealsense2
+numpy==1.24.4
+opencv-python==4.11.0.86
+PyQt5==5.15.11
+PyYAML==6.0.2
+ultralytics==8.3.197
+pyrealsense2==2.55.1.6486
+pyserial==3.5

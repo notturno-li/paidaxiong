@@ -1,0 +1,147 @@
+extends: competition.yaml
+
+# 今日题面专用配置。默认 simulation，确认现场位姿/模型后将 mode 改为 hardware。
+mode: hardware
+competition:
+  name: RAICOM 机器视觉系统创新赛
+  level: national
+  profile: 2026-08-18-day1
+
+camera:
+  width: 640
+  height: 480
+  fps: 30
+
+model:
+  # 自动选择 today_shape_* 中最新的 best.pt；找不到时拒绝进入真机模式。
+  weights: models/field_models/today_shape_20260819_093529/best.pt
+  weights_glob: models/field_models/today_shape_*/best.pt
+  fallback_weights:
+  conf_threshold: 0.80
+  strict_class_names: true
+  class_names:
+    - 六棱柱
+    - 正方体
+    - 圆柱
+    - 平行四边形
+    - 长方体
+    - 大圆柱
+    - 梯形
+
+robot:
+  # 以下是安全占位位姿，必须在赛台重新示教；所有 Z 小于安全下限的值会被拒绝。
+  safe_z_mm: 180.0
+  min_grasp_z_mm: 80.0
+  photo_pose: [-99.2374, 230.6486, 360.1257, 180.0, 0.0, -176.7161]
+  bins:
+    __replace__: true
+    六棱柱: [235.1506, 303.0873, 142.9315, -178.8094, 6.3778, 73.4801]
+    正方体: [186.1532, 264.6364, 114.9246, 176.9791, -0.6881, 113.0552]
+    圆柱: [221.3632, 324.3514, 147.6123, 177.4265, 1.1069, 122.3099]
+    平行四边形: [257.7566, 203.344, 109.4509, 179.3301, 7.0718, 126.7124]
+    长方体: [181.3455, 195.8676, 96.8358, 179.6487, 3.436, 131.3781]
+    大圆柱: [226.1104, 237.4522, 109.7052, 179.436, 2.7664, 151.6134]
+    梯形: [266.6058, 269.9901, 114.3658, 176.5738, 2.5108, 150.4338]
+
+workflow:
+  auto_max_objects: 5
+  auto_empty_frames_to_finish: 6
+  photo_pose_before_detection: true
+  output_dir: runs/vision_outputs
+
+orientation:
+  enabled: true
+  angle_frame: base
+  require_valid: true
+  bbox_expand_ratio: 0.12
+  min_depth_points: 30
+  min_object_points: 25
+  min_height_above_plane_mm: 3.0
+  max_height_above_plane_mm: 600.0
+  min_anisotropy: 0.20
+  image_to_tool_sign: 1.0  # 旧版图像角度兼容项；angle_frame=base时不使用
+  tool_yaw_offset_deg: 0.0
+  symmetric_labels: [圆柱, 大圆柱]
+  classes:
+    六棱柱: {mode: symmetric, period_deg: 60}
+    正方体: {mode: symmetric, period_deg: 90}
+    圆柱: {mode: ignore, period_deg: 360}
+    大圆柱: {mode: ignore, period_deg: 360}
+    平行四边形: {mode: pca, period_deg: 180}
+    长方体: {mode: pca, period_deg: 180}
+    梯形: {mode: directed_contour, period_deg: 360, directed_sign: 1.0}
+
+assembly:
+  target_mode: fixed
+  slots:
+    六棱柱: {approach_clearance_mm: 35.0}
+    正方体: {approach_clearance_mm: 35.0}
+    圆柱: {approach_clearance_mm: 35.0}
+    平行四边形: {approach_clearance_mm: 35.0}
+    长方体: {approach_clearance_mm: 35.0}
+    大圆柱: {approach_clearance_mm: 35.0}
+    梯形: {approach_clearance_mm: 35.0}
+
+simulation:
+  objects:
+    - {label: 六棱柱, confidence: 0.96, bbox: [95, 105, 175, 185], height_mm: 42}
+    - {label: 正方体, confidence: 0.94, bbox: [205, 90, 285, 170], height_mm: 35}
+    - {label: 圆柱, confidence: 0.92, bbox: [325, 105, 405, 185], height_mm: 28}
+    - {label: 平行四边形, confidence: 0.91, bbox: [150, 250, 255, 335], height_mm: 24}
+    - {label: 长方体, confidence: 0.90, bbox: [350, 250, 465, 340], height_mm: 31}
+
+task_outputs:
+  # 结果文件目录。仅在 file_fallback_enabled=true，或 TCP 未启用时使用。
+  # 相对路径以项目根目录 robotgame 为基准；通常不需要修改。
+  directory: runs/vision_outputs
+  # 是否同时读取上面目录中的旧文本文件。TCP 模式下必须保持 false，
+  # 否则历史文件可能覆盖刚收到的实时结果；只有没有 TCP 时才改为 true。
+  file_fallback_enabled: false
+  tcp:
+    # 是否启用模块 B 的 TCP 输入。使用 DVS TCP 输出时保持 true。
+    enabled: true
+    # DVS 的 TCP 服务端 IP。题面/现场固定为 192.168.5.4，通常不要修改。
+    host: 192.168.5.4
+    # DVS 服务端监听端口，必须填写 1~65535；目前未知所以留空。
+    # 端口确定后只改这一行，例如 port: 10001，然后重启今日 GUI。
+    port: 7930
+    # DVS 报文的字符编码。UTF-8 保持 utf-8；若现场明确使用 GBK/GB18030 才修改。
+    encoding: utf-8
+    # TCP 分帧标记。当前表示“每行一条报文”；DVS 每条结果末尾应发送 \n。
+    # 若 DVS 使用 Windows 换行，改为 '\r\n'；不要写成真正的换行符。
+    delimiter: '\n'
+    # 建立 TCP 连接最多等待秒数；网络正常时不需要修改。
+    connect_timeout_s: 1.5
+    # 已连接但暂时没有数据时，每次等待多久再继续检查；不是结果刷新周期。
+    receive_timeout_s: 0.25
+    # 连接断开后的重连间隔秒数；DVS 启动较慢时可改为 2~3。
+    reconnect_interval_s: 1.0
+    # 单条 TCP 缓存允许的最大字节数，用于防止异常报文占满内存；通常不需要修改。
+    max_buffer_bytes: 262144
+    # 无字段前缀的纯文本默认不接收，防止把不同题目的结果混到错误字段。
+    # 只有 DVS 每次连接只发送一种结果时，才填写 gear/recognition/defect/measurement。
+    default_key:
+    # DVS 报文中字段名的别名映射到程序内部键；DVS 使用下列名称时无需修改。
+    # 若 DVS 发来的键名不同，只在对应列表中追加别名，不要改左侧程序键名。
+    field_aliases:
+      gear: [gear, 齿轮识别, 齿轮识别.txt]
+      recognition: [recognition, 字符识别与二维码识别, 字符二维码]
+      defect: [defect, 缺陷检测, 缺陷检测.txt]
+      measurement: [measurement, 尺寸测量, 尺寸测量.txt]
+  # 左侧是程序内部键，右侧只是 GUI 监控区显示名称；不参与 TCP 解析。
+  # 题面字段名称改变时可改右侧文字，但不要改左侧键名。
+  monitor_fields:
+    gear: 齿轮识别
+    broken: 缺齿识别
+    ocr: 字符识别
+    qr: 二维码识别
+    compare: 信息对比
+    defect: 缺陷检测
+    measurement: 尺寸测量（B/D字段冲突，现场确认）
+  # TCP 关闭或 file_fallback_enabled=true 时读取的备用文件名；TCP 模式下通常不用改。
+  # 若现场文件名改变，只修改右侧文件名，左侧键名保持不变。
+  files:
+    gear: 齿轮识别.txt
+    recognition: 字符识别与二维码识别.txt
+    defect: 缺陷检测.txt
+    measurement: 尺寸测量.txt

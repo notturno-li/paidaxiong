@@ -6,6 +6,11 @@ from typing import Any
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "mode": "simulation",
+    "competition": {
+        "name": "2026 睿抗机器人大赛机器视觉系统创新赛",
+        "level": "provincial",
+        "profile": "provincial_7_tasks",
+    },
     "camera": {"width": 640, "height": 480, "fps": 30, "min_valid_depth_mm": 150, "max_valid_depth_mm": 900},
     "model": {"weights": "models/fruit_best.pt", "fallback_weights": "models/yolov8s.pt", "conf_threshold": 0.45, "class_names": ["apple", "banana", "grape", "strawberry"]},
     "robot": {
@@ -45,17 +50,105 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "plane_inlier_mm": 8.0, "plane_ransac_iters": 120, "plane_sample_points": 4000,
         "plane_top_percentile": 70.0,
     },
+    "command_transport": {
+        "mode": "preview",
+        "host": "192.168.5.1",
+        "port": 10000,
+        "connect_timeout_s": 2.0,
+        "reply_timeout_s": 3.0,
+        "terminator": "\n",
+    },
+    "vision_studio": {
+        "mode": "disabled",
+        "encoding": "utf-8",
+        "connect_timeout_s": 2.0,
+        "reply_timeout_s": 3.0,
+        "send_terminator": "",
+        "receive_terminator": "",
+        "max_reply_bytes": 65536,
+        "serial": {
+            "port": None,
+            "baudrate": 115200,
+            "data_bits": 8,
+            "parity": "none",
+            "stop_bits": 1,
+        },
+        "tcp": {"host": None, "port": None},
+        "protocol": {
+            "send_before_receive": True,
+            "exchange_command": None,
+            "delimiter": ",",
+            "response_fields": [],
+            "global_values": {},
+        },
+        "simulation_result": {"ok": True},
+    },
+    "modules": {
+        "auto_dependencies": True,
+        "default_recipe": "national_auto"
+    },
+    "recipes": {},
     "workflow": {"auto_max_objects": 4, "auto_empty_frames_to_finish": 8, "command_json_log": True},
+    "orientation": {
+        "enabled": True,
+        "angle_frame": "base",
+        "require_valid": False,
+        "bbox_expand_ratio": 0.12,
+        "min_depth_points": 30,
+        "min_object_points": 25,
+        "min_height_above_plane_mm": 3.0,
+        "max_height_above_plane_mm": 600.0,
+        "min_anisotropy": 0.20,
+        "classes": {},
+    },
+    "assembly": {"target_mode": "fixed", "frame_pose_base": None, "slots": {}},
 }
 
 
 def deep_update(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     for key, value in extra.items():
+        if isinstance(value, dict) and value.get("__replace__") is True:
+            # Keep the marker through nested extends resolution. load_config removes
+            # it only after the resolved document has replaced DEFAULT_CONFIG too.
+            base[key] = deepcopy(value)
+            continue
         if isinstance(value, dict) and isinstance(base.get(key), dict):
             deep_update(base[key], value)
         else:
             base[key] = value
     return base
+
+
+def _load_yaml_with_extends(path: Path, loading: set[Path] | None = None) -> dict[str, Any]:
+    path = path.resolve()
+    loading = set() if loading is None else loading
+    if path in loading:
+        chain = " -> ".join(str(item) for item in (*loading, path))
+        raise RuntimeError(f"配置 extends 存在循环引用: {chain}")
+    if not path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {path}")
+
+    try:
+        import yaml
+    except Exception as exc:
+        raise RuntimeError("未安装 PyYAML，无法读取比赛配置") from exc
+
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(loaded, dict):
+        raise RuntimeError(f"配置文件顶层必须是映射: {path}")
+
+    parent_name = loaded.pop("extends", None)
+    if not parent_name:
+        return loaded
+    parent_path = Path(parent_name)
+    if not parent_path.is_absolute():
+        parent_path = path.parent / parent_path
+    loading.add(path)
+    try:
+        parent = _load_yaml_with_extends(parent_path, loading)
+    finally:
+        loading.remove(path)
+    return deep_update(parent, loaded)
 
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
@@ -66,10 +159,53 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
     if not path.exists():
         return config
     try:
-        import yaml
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        if isinstance(loaded, dict):
-            deep_update(config, loaded)
-    except Exception:
-        pass
+        deep_update(config, _load_yaml_with_extends(path))
+    except (FileNotFoundError, RuntimeError):
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"读取配置失败: {path}: {exc}") from exc
+    _strip_replace_markers(config)
+    config["_config_path"] = str(path.resolve())
     return config
+
+
+def _strip_replace_markers(value: Any) -> None:
+    if isinstance(value, dict):
+        value.pop("__replace__", None)
+        for child in value.values():
+            _strip_replace_markers(child)
+    elif isinstance(value, list):
+        for child in value:
+            _strip_replace_markers(child)
+
+
+def update_yaml_config(
+    path: str | Path,
+    updates: dict[str, Any],
+    *,
+    extends: str | None = None,
+) -> Path:
+    """Merge and atomically persist a small field override configuration."""
+    try:
+        import yaml
+    except Exception as exc:
+        raise RuntimeError("未安装 PyYAML，无法保存现场配置") from exc
+
+    destination = Path(path)
+    existing: dict[str, Any] = {}
+    if destination.exists():
+        loaded = yaml.safe_load(destination.read_text(encoding="utf-8")) or {}
+        if not isinstance(loaded, dict):
+            raise RuntimeError(f"现场配置文件顶层必须是映射: {destination}")
+        existing = loaded
+    if extends is not None:
+        existing["extends"] = extends
+    deep_update(existing, deepcopy(updates))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(
+        yaml.safe_dump(existing, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    temporary.replace(destination)
+    return destination.resolve()

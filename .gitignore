@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 venv/
 env/
+wheelhouse/
 
 # IDE
 .idea/
@@ -27,6 +28,7 @@ picture/
 
 # Large model weights / checkpoints
 models/*.pt
+models/field_models/
 scripts/*.pt
 scripts/models/*.pt
 *.pth

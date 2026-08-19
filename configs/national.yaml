@@ -1,0 +1,288 @@
+# 2026 全国赛模块化预设。
+# 正式国赛任务书发布后，只需调整 recipes，不要复制或改写工作流代码。
+extends: competition.yaml
+
+competition:
+  name: 2026 睿抗机器人开发者大赛 - 全国赛模块化控制台
+  level: national
+  profile: national_modular_v1
+
+command_transport:
+  mode: preview
+  host:
+  port: 10000
+  connect_timeout_s: 2.0
+  reply_timeout_s: 3.0
+  terminator: "\n"
+
+# DobotVisionStudio 4.1.2 的通信设备独立于机械臂 Dashboard 连接。
+# mode 可选 disabled / serial / tcp_client / tcp_server。
+vision_studio:
+  mode: disabled
+  encoding: utf-8
+  connect_timeout_s: 2.0
+  reply_timeout_s: 3.0
+  send_terminator: ""
+  receive_terminator: ""
+  max_reply_bytes: 65536
+  serial:
+    port:
+    baudrate: 115200
+    data_bits: 8
+    parity: none
+    stop_bits: 1
+  tcp:
+    host:
+    port:
+  protocol:
+    send_before_receive: true
+    exchange_command:
+    delimiter: ","
+    response_fields: []
+    global_values: {}
+  simulation_result:
+    ok: true
+
+# DVS 返回字段的现场适配层。正式任务书到手后复制 generic 为新 profile，
+# 然后只填写字段别名、阈值、路由和位姿，不修改 Python 代码。
+vision_tasks:
+  active_profile: generic
+  profiles:
+    generic:
+      aliases:
+        status: [result, quality, state]
+        label: [class, color, type]
+        x: [robot_x, base_x]
+        y: [robot_y, base_y]
+        z: [robot_z, base_z]
+        target_x: [hole_x, place_x]
+        target_y: [hole_y, place_y]
+        target_z: [hole_z, place_z]
+      identifier_fields: []
+      status:
+        field: status
+        ok_values: [OK, PASS, 1, true]
+        ng_values: [NG, FAIL, 0, false]
+      measurement_limits: {}
+      route:
+        field: decision
+        map:
+          OK: ok
+          NG: ng
+      pick:
+        fields: [x, y, z]
+        defaults: [0, 0, 0, 180, 0, 0]
+        offsets: [0, 0, 0, 0, 0, 0]
+      place:
+        fields: [target_x, target_y, target_z]
+        defaults: [0, 0, 0, 180, 0, 0]
+        offsets: [0, 0, 0, 0, 0, 0]
+        route_poses: {}
+    defect_sort_template:
+      aliases:
+        status: [result, quality, state]
+        x: [robot_x, base_x]
+        y: [robot_y, base_y]
+        z: [robot_z, base_z]
+      status:
+        field: status
+        ok_values: [OK, PASS, 1, true]
+        ng_values: [NG, FAIL, 0, false]
+      route:
+        field: decision
+        map: {OK: ok, NG: reject}
+      pick:
+        fields: [x, y, z]
+        defaults: [0, 0, 0, 180, 0, 0]
+        offsets: [0, 0, 0, 0, 0, 0]
+      place:
+        route_poses: {}  # 现场填写 ok/reject 的 6 轴位姿
+    color_sort_template:
+      aliases:
+        label: [color, class, type]
+        x: [robot_x, base_x]
+        y: [robot_y, base_y]
+        z: [robot_z, base_z]
+      route:
+        field: label
+        map: {}          # 例如 red: red_bin
+      pick:
+        fields: [x, y, z]
+        defaults: [0, 0, 0, 180, 0, 0]
+        offsets: [0, 0, 0, 0, 0, 0]
+      place:
+        route_poses: {}  # 例如 red_bin: [x, y, z, rx, ry, rz]
+        route_slots: {}  # 同一颜色多个槽位时填 red_bin: [[pose1], [pose2]]
+        route_stacks: {} # 堆叠时填 red_bin: {base_pose: [...], layer_height_mm: 20, max_layers: 3}
+    measurement_template:
+      aliases:
+        width: [w, width_mm]
+        length: [l, length_mm]
+        diameter: [d, diameter_mm]
+      measurement_limits: {}  # 例如 width: {min: 19.8, max: 20.2}
+      route:
+        field: decision
+        map: {OK: ok, NG: reject}
+    recognition_template:
+      aliases:
+        ocr: [text, characters]
+        barcode: [bar_code, code1d]
+        qrcode: [qr, code2d]
+      identifier_fields: [ocr, barcode, qrcode]
+    guided_assembly_template:
+      aliases:
+        part_x: [x, pick_x]
+        part_y: [y, pick_y]
+        part_z: [z, pick_z]
+        hole_x: [target_x, place_x]
+        hole_y: [target_y, place_y]
+        hole_z: [target_z, place_z]
+      pick:
+        fields: [part_x, part_y, part_z]
+        defaults: [0, 0, 0, 180, 0, 0]
+        offsets: [0, 0, 0, 0, 0, 0]
+      place:
+        fields: [hole_x, hole_y, hole_z]
+        defaults: [0, 0, 0, 180, 0, 0]
+        offsets: [0, 0, 0, 0, 0, 0]
+
+# 通用 DVS 多件循环。默认只通信和解析，不执行机械臂动作。
+dvs_cycle:
+  max_items: 8
+  delay_s: 0.2
+  processor: none       # none / status / measurement / status_measurement
+  validate_identifiers: false
+  route: false
+  execute_motion: false
+  before_each_sequence:
+  after_each_sequence:
+  reset_placement_counters_on_start: true
+  empty:
+    field:
+    values: [EMPTY, NONE, NO_TARGET]
+  on_error: stop        # stop / skip；执行机械臂动作时必须是 stop
+
+# 固定动作链用于取料、送到视觉检测区、回收等综合任务步骤。
+# 位姿必须由现场示教后填写；预检模块会在连接机器人前检查引用和安全 Z。
+action_sequences:
+  active_profile: custom
+  pose_bank: {}
+  profiles:
+    custom:
+      steps: []
+    inspection_feed_template:
+      steps:
+        - {action: movj, pose_ref: input_above}
+        - {action: movl_slow, pose_ref: input_pick}
+        - {action: suction, value: true}
+        - {action: wait, seconds: 0.5}
+        - {action: movl, pose_ref: input_above}
+        - {action: movj, pose_ref: inspection_above}
+        - {action: movl_slow, pose_ref: inspection_place}
+        - {action: suction, value: false}
+        - {action: wait, seconds: 0.3}
+        - {action: movl, pose_ref: inspection_above}
+        - {action: home}
+    inspection_retrieve_template:
+      steps:
+        - {action: movj, pose_ref: inspection_above}
+        - {action: movl_slow, pose_ref: inspection_pick}
+        - {action: suction, value: true}
+        - {action: wait, seconds: 0.5}
+        - {action: movl, pose_ref: inspection_above}
+        - {action: movj, pose_ref: output_above}
+        - {action: movl_slow, pose_ref: output_place}
+        - {action: suction, value: false}
+        - {action: wait, seconds: 0.3}
+        - {action: movl, pose_ref: output_above}
+        - {action: home}
+
+modules:
+  auto_dependencies: true
+  confirm_robot_motion: true
+  default_recipe: national_auto
+
+recipes:
+  national_auto:
+    name: 国赛自动分拣
+    modules:
+      - sort.auto
+  field_setup:
+    name: 赛台初始化
+    modules:
+      - vision_result.reset_places
+      - camera.start
+      - robot.connect
+      - vision_studio.discover
+      - calibration.table
+      - robot.home
+  dvs_discovery:
+    name: DVS 通信端点扫描
+    modules:
+      - vision_studio.discover
+  dvs_exchange:
+    name: DVS 触发与结果读取
+    modules:
+      - vision_studio.exchange
+  dvs_set_globals:
+    name: 设置 DVS 全局变量
+    modules:
+      - vision_studio.set_globals
+  measurement_check:
+    name: DVS 尺寸测量与公差判定
+    modules:
+      - vision_result.measure
+  recognition_check:
+    name: DVS 字符/条码/二维码识别
+    modules:
+      - vision_result.identify
+  defect_sort:
+    name: DVS 缺陷判定与分拣
+    modules:
+      - vision_result.quality
+      - vision_result.route
+      - robot.result_pick_place
+  result_sort:
+    name: DVS 类别/颜色分拣
+    modules:
+      - vision_result.route
+      - robot.result_pick_place
+  guided_assembly:
+    name: DVS 定位引导装配
+    modules:
+      - vision_result.plan_motion
+      - robot.result_pick_place
+  dvs_cycle:
+    name: DVS 多工件连续任务
+    modules:
+      - task.dvs_cycle
+  national_dvs_auto:
+    name: DVS 触发后运行本地视觉分拣
+    modules:
+      - vision_studio.exchange
+      - sort.auto
+  vision_debug:
+    name: 视觉与坐标联调
+    modules:
+      - vision.detect
+      - target.calculate
+  tcp_handshake:
+    name: JSON 通信握手
+    modules:
+      - network.send
+  fixed_point:
+    name: 固定点抓放
+    modules:
+      - robot.fixed_pick
+  fixed_action_sequence:
+    name: 固定取放/送检动作序列
+    modules:
+      - robot.sequence_execute
+  single_sort:
+    name: 单物料分拣
+    modules:
+      - robot.pick_one
+  continuous_sort:
+    name: 连续分拣
+    modules:
+      - sort.auto

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>国赛现场零 AI 操作卡</title>
+  <style>
+    * { box-sizing: border-box; letter-spacing: 0; }
+    body { margin: 0; color: #111; background: #fff; font: 14px/1.45 "Microsoft YaHei", sans-serif; }
+    main { max-width: 1120px; margin: 0 auto; padding: 20px 24px; }
+    h1 { margin: 0 0 8px; font-size: 26px; color: #123b5d; }
+    h2 { margin: 18px 0 7px; padding-bottom: 4px; border-bottom: 2px solid #386c8f; font-size: 17px; }
+    p { margin: 5px 0; }
+    ol { margin: 6px 0; padding-left: 24px; }
+    table { width: 100%; border-collapse: collapse; margin: 6px 0; table-layout: fixed; }
+    th, td { border: 1px solid #555; padding: 5px 7px; vertical-align: top; overflow-wrap: anywhere; }
+    th { background: #e8eef2; text-align: left; }
+    code { font-family: Consolas, monospace; }
+    .stop { border: 2px solid #9b1c1c; padding: 7px 9px; font-weight: 700; color: #7f1212; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @page { size: A4 landscape; margin: 10mm; }
+    @media print { main { max-width: none; padding: 0; } h2 { break-after: avoid; } table { break-inside: avoid; } }
+    @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body><main>
+  <h1>国赛现场零 AI 操作卡</h1>
+  <p>机械臂固定：<strong>192.168.5.1:29999</strong>。DVS 端点按现场填写，绝不猜测。</p>
+  <p class="stop">自检有“阻止”项、数据未核对、低速单件未验证：禁止启动机器人动作。</p>
+
+  <div class="cols">
+    <section>
+      <h2>拿到任务书后</h2>
+      <ol>
+        <li>需现场训练时：Dataset Studio 拍摄、局域网标注、训练。</li>
+        <li>模型管理：应用新模型并核对类别顺序。</li>
+        <li>通信/高级：填写 DVS 模式、端点和报文。</li>
+        <li>任务向导：选题型，填字段、阈值、路线和位姿。</li>
+        <li>动作编辑器：有固定送检流程时填写。</li>
+        <li>赛前自检：先离线，接线后再做硬件连接检查。</li>
+        <li>只读 DVS，核对完整结果和计划位姿。</li>
+        <li>先单帧识别，空场低速单件，最后才连续运行。</li>
+      </ol>
+    </section>
+    <section>
+      <h2>DVS 角色对应</h2>
+      <table><tr><th>DVS</th><th>本程序</th></tr>
+        <tr><td>串口一端</td><td>serial，选择配对另一 COM</td></tr>
+        <tr><td>TCP 服务端</td><td>tcp_client</td></tr>
+        <tr><td>TCP 客户端</td><td>tcp_server</td></tr>
+      </table>
+      <p>JSON：字段顺序留空。逗号：<code>,</code>。任意空白：<code>whitespace</code>。</p>
+    </section>
+  </div>
+
+  <h2>题型选择</h2>
+  <table>
+    <tr><th>关键词</th><th>向导题型</th><th>关键填写项</th></tr>
+    <tr><td>缺陷、OK/NG</td><td>缺陷或状态分拣</td><td>状态字段、OK/NG 值、路线</td></tr>
+    <tr><td>颜色、类别、型号</td><td>颜色/类别/型号分拣</td><td>类别字段、值到路线映射</td></tr>
+    <tr><td>长宽直径、公差</td><td>尺寸测量或测量后分拣</td><td>字段、min/max</td></tr>
+    <tr><td>字符、条码、二维码</td><td>OCR/条码/二维码识别</td><td>只填本题必需识别字段</td></tr>
+    <tr><td>编码正确性、白名单、格式</td><td>识别核验后分拣</td><td>equals / allowed / regex</td></tr>
+    <tr><td>缺陷 + 尺寸 + 编码组合</td><td>综合自定义任务</td><td>叠加状态、尺寸、识别和路由</td></tr>
+    <tr><td>孔位、装配、定位</td><td>视觉定位引导装配</td><td>抓取 XYZ、放置 XYZ</td></tr>
+    <tr><td>固定送检后分流</td><td>固定取料送检后分流</td><td>动作序列、状态、路线</td></tr>
+    <tr><td>槽位、码垛</td><td>任意分拣 + 槽位/堆叠</td><td>槽位顺序或基准点、层高、层数</td></tr>
+  </table>
+
+  <div class="cols">
+    <section>
+      <h2>动作前检查</h2>
+      <ol>
+        <li>原始返回字段正确。</li><li>判定和路线正确。</li>
+        <li>抓取/放置 XYZ 坐标系和单位正确。</li><li>Z 不低于安全下限。</li>
+        <li>动作预览通过，急停可用，工作区无人。</li>
+      </ol>
+    </section>
+    <section>
+      <h2>故障优先排查</h2>
+      <p>超时：角色、IP、端口、防火墙。</p>
+      <p>无数据：触发方式、触发串、结束符。</p>
+      <p>字段错：分隔符、字段顺序、别名。</p>
+      <p>动作错：基坐标、单位、标定、补偿。</p>
+      <p>急停后：清障，重新连接，再做无运动读取。</p>
+    </section>
+  </div>
+</main></body></html>

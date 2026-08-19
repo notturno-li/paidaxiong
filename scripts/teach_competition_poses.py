@@ -29,6 +29,15 @@ def render_sequence(values: Iterable[float], indent: int) -> list[str]:
 def replace_sequence_block(text: str, key: str, values: list[float]) -> str:
     lines = text.splitlines()
     key_pattern = re.compile(rf"^(\s*){re.escape(key)}:\s*$")
+    inline_pattern = re.compile(rf"^(\s*){re.escape(key)}:\s*\[.*\]\s*$")
+
+    for index, line in enumerate(lines):
+        match = inline_pattern.match(line)
+        if match:
+            indent = match.group(1)
+            formatted = ", ".join(format_number(value) for value in values)
+            lines[index] = f"{indent}{key}: [{formatted}]"
+            return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
     for index, line in enumerate(lines):
         match = key_pattern.match(line)
@@ -63,13 +72,16 @@ def save_pose_to_yaml(path: Path, robot_section: dict[str, object], updates: dic
         updated = replace_sequence_block(updated, "home_pose", updates["home_pose"])
     if "fixed_test_pose" in updates:
         updated = replace_sequence_block(updated, "fixed_test_pose", updates["fixed_test_pose"])
+    if "photo_pose" in updates:
+        updated = replace_sequence_block(updated, "photo_pose", updates["photo_pose"])
 
     bins = robot_section.get("bins", {})
     if isinstance(bins, dict):
         for label, pose in updates.items():
-            if label in {"home_pose", "fixed_test_pose"}:
+            if label in {"home_pose", "fixed_test_pose", "photo_pose"}:
                 continue
-            updated = replace_sequence_block(updated, label, pose)
+            if label in bins:
+                updated = replace_sequence_block(updated, label, pose)
 
     path.write_text(updated, encoding="utf-8")
 
@@ -88,6 +100,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=None, help="机器人 TCP 端口，覆盖配置")
     parser.add_argument("--skip-home", action="store_true", help="跳过 home_pose")
     parser.add_argument("--skip-fixed", action="store_true", help="跳过 fixed_test_pose")
+    parser.add_argument("--skip-photo", action="store_true", help="跳过 photo_pose")
     parser.add_argument("--labels", nargs="*", default=None, help="只标定指定的盒子标签，默认按现有 bins 顺序")
     parser.add_argument("--dry-run", action="store_true", help="只打印不写回文件")
     args = parser.parse_args()
@@ -110,11 +123,18 @@ def main() -> int:
     if not labels:
         raise RuntimeError("没有可标定的盒子标签")
 
+    source_text = config_path.read_text(encoding="utf-8")
+
+    def has_top_level_key(key: str) -> bool:
+        return re.search(rf"^\s*{re.escape(key)}\s*:", source_text, re.MULTILINE) is not None
+
     tasks: list[tuple[str, str]] = []
-    if not args.skip_home:
+    if not args.skip_home and has_top_level_key("home_pose"):
         tasks.append(("home_pose", "回零/安全停靠位"))
-    if not args.skip_fixed:
+    if not args.skip_fixed and has_top_level_key("fixed_test_pose"):
         tasks.append(("fixed_test_pose", "定点测试抓取位"))
+    if not args.skip_photo and has_top_level_key("photo_pose"):
+        tasks.append(("photo_pose", "拍照位"))
     tasks.extend((label, f"{label} 盒子位") for label in labels)
 
     print(f"目标配置: {config_path}")
@@ -135,7 +155,11 @@ def main() -> int:
 
         updates: dict[str, list[float]] = {}
         for key, title in tasks:
-            current = robot_cfg.get("bins", {}).get(key) if key not in {"home_pose", "fixed_test_pose"} else robot_cfg.get(key)
+            current = (
+                robot_cfg.get("bins", {}).get(key)
+                if key not in {"home_pose", "fixed_test_pose", "photo_pose"}
+                else robot_cfg.get(key)
+            )
             print()
             print(f"[{title}]")
             if current:

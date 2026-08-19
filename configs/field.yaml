@@ -1,0 +1,12 @@
+extends: national.yaml
+recipes:
+  field_20260818_132738:
+    name: 测试1
+    modules:
+    - sort.auto
+  field_20260818_133857:
+    name: 测试2
+    modules:
+    - sort.auto
+    - vision.detect
+    - network.send

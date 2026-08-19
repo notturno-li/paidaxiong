@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import cos, radians, sin
+from math import asin, atan2, cos, degrees, radians, sin, sqrt
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +25,28 @@ def pose_to_matrix(pose: list[float] | tuple[float, ...]) -> np.ndarray:
 
 def matrix_to_pose_xyz_keep_rpy(matrix: np.ndarray, rpy: list[float] | tuple[float, float, float]) -> list[float]:
     return [float(matrix[0, 3]), float(matrix[1, 3]), float(matrix[2, 3]), float(rpy[0]), float(rpy[1]), float(rpy[2])]
+
+
+def matrix_to_pose(matrix: np.ndarray) -> list[float]:
+    """Convert a homogeneous transform to XYZ + ZYX Euler angles in degrees."""
+    rotation = np.asarray(matrix, dtype=float)[:3, :3]
+    horizontal = sqrt(float(rotation[0, 0] ** 2 + rotation[1, 0] ** 2))
+    if horizontal > 1e-9:
+        rx = atan2(float(rotation[2, 1]), float(rotation[2, 2]))
+        ry = atan2(float(-rotation[2, 0]), horizontal)
+        rz = atan2(float(rotation[1, 0]), float(rotation[0, 0]))
+    else:
+        rx = atan2(float(-rotation[1, 2]), float(rotation[1, 1]))
+        ry = asin(float(np.clip(-rotation[2, 0], -1.0, 1.0)))
+        rz = 0.0
+    return [
+        float(matrix[0, 3]),
+        float(matrix[1, 3]),
+        float(matrix[2, 3]),
+        degrees(rx),
+        degrees(ry),
+        degrees(rz),
+    ]
 
 
 class CoordinateTransformer:

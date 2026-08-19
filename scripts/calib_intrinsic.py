@@ -9,7 +9,7 @@ Usage:
   6. Results are merged into configs/competition.yaml and runs/intrinsic/intrinsic.yaml
 """
 from __future__ import annotations
-import re, sys
+import sys
 from pathlib import Path
 import cv2, numpy as np, yaml
 import pyrealsense2 as rs
@@ -23,7 +23,6 @@ SAVE_DIR      = Path("runs/intrinsic/images")
 OUTPUT_DIR    = Path("runs/intrinsic")
 OUTPUT_YAML   = OUTPUT_DIR / "intrinsic.yaml"
 CONFIG_YAML   = Path("configs/competition.yaml")
-SOLVE_SCRIPT  = Path("scripts/calib_solve.py")
 
 
 def calibrate(img_paths):
@@ -75,20 +74,7 @@ def save_results(K, dist, rms):
             print(f"Merged -> {CONFIG_YAML}")
         except Exception as e:
             print(f"Failed to update competition.yaml: {e}")
-    if SOLVE_SCRIPT.exists():
-        src = SOLVE_SCRIPT.read_text(encoding="utf-8")
-        new_K = (f"camera_matrix = np.array([[{fx:.4f}, 0.0, {cx:.4f}],\n"
-                 f"                          [0.0, {fy:.4f}, {cy:.4f}],\n"
-                 f"                          [0.0, 0.0, 1.0]], dtype=np.float64)")
-        new_d = (f"dist_coeffs = np.array([[{dl[0]:.8f}],\n"
-                 f"                        [{dl[1]:.8f}],\n"
-                 f"                        [{dl[2]:.8f}],\n"
-                 f"                        [{dl[3]:.8f}],\n"
-                 f"                        [{dl[4]:.8f}]], dtype=np.float64)")
-        src = re.sub(r"camera_matrix\s*=\s*np\.array\(\[.*?\],\s*dtype=np\.float64\)", new_K, src, flags=re.DOTALL)
-        src = re.sub(r"dist_coeffs\s*=\s*np\.(zeros|array)\([^)]*\)(\s*#[^\n]*)?", new_d, src)
-        SOLVE_SCRIPT.write_text(src, encoding="utf-8")
-        print(f"Patched -> {SOLVE_SCRIPT}")
+    print("手眼求解不会读取或改写此文件；它只使用 runs/calib_data/camera_intrinsics.yaml。")
 
 
 def main():
@@ -138,7 +124,7 @@ def main():
                     print(f"  fx={K[0,0]:.3f}  fy={K[1,1]:.3f}  cx={K[0,2]:.3f}  cy={K[1,2]:.3f}")
                     print(f"  dist={[round(v,5) for v in dist.flatten().tolist()]}")
                     print("="*55)
-                    if input("Write to competition.yaml and calib_solve.py? [y/N] ").strip().lower() == 'y':
+                    if input("Write to competition.yaml fallback values? [y/N] ").strip().lower() == 'y':
                         save_results(K, dist, rms)
                     else:
                         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

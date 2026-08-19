@@ -2,6 +2,14 @@ import cv2  # 负责核心视觉算法 (角点提取、PnP求解、Tsai-Lenz标�
 import numpy as np  # 负责高精度矩阵运算，机器人的世界本质上就是一堆多维数组
 import os, glob, math  # 负责文件路径读取和基础数学(弧度转换)
 
+from calib_metadata import (
+    CalibrationMetadataError,
+    build_metadata,
+    load_metadata,
+    validate_device_against_metadata,
+    validate_existing_images,
+)
+
 # ==============================================================================
 # 模块一：全局物理参数锁死区 (零误差的前提)
 # ==============================================================================
@@ -15,34 +23,49 @@ SQUARE_SIZE = 10.0
 
 IMAGE_DIR = "runs/calib_data/images/"
 POSE_DIR = "runs/calib_data/poses/"
+METADATA_FILE = "runs/calib_data/camera_intrinsics.yaml"
 
 # 【关键】：内参分辨率必须与采集图像分辨率完全一致！
-# 采集脚本(calib_collect.py / calib_collect_auto.py)用的是 1280x720，
-# 这里若用 640x480 读内参，fx/fy/主点全错一倍，PnP 会系统性失真 → 标定误差爆炸。
-CAMERA_WIDTH = 1280
-CAMERA_HEIGHT = 720
+# 采集、求解和正式运行统一使用 640x480；求解时还会校验本批次图像尺寸和设备内参。
+CAMERA_WIDTH = 640
+CAMERA_HEIGHT = 480
 
-# 【相机内参矩阵】：自动从 D435 硬件读取，保证与采集时一致
-# 如果相机未连接，则使用下方兜底值(1280x720 下的典型值)
+# 内参必须来自本批次采集时的 RealSense 彩色流，不再使用配置文件或硬编码兜底值。
+camera_matrix, dist_coeffs, capture_metadata = load_metadata(
+    METADATA_FILE, CAMERA_WIDTH, CAMERA_HEIGHT
+)
+validate_existing_images(IMAGE_DIR, CAMERA_WIDTH, CAMERA_HEIGHT)
+
+_pipeline = None
 try:
     import pyrealsense2 as rs
+
     _pipeline = rs.pipeline()
     _cfg = rs.config()
     _cfg.enable_stream(rs.stream.color, CAMERA_WIDTH, CAMERA_HEIGHT, rs.format.bgr8, 30)
     _profile = _pipeline.start(_cfg)
-    _intr = _profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
-    camera_matrix = np.array([[_intr.fx, 0.0, _intr.ppx],
-                              [0.0, _intr.fy, _intr.ppy],
-                              [0.0, 0.0, 1.0]], dtype=np.float64)
-    dist_coeffs = np.array([[c] for c in _intr.coeffs], dtype=np.float64)
-    _pipeline.stop()
-    print(f"[内参] 已从 D435 硬件读取 ({CAMERA_WIDTH}x{CAMERA_HEIGHT}): fx={_intr.fx:.2f} fy={_intr.fy:.2f} cx={_intr.ppx:.2f} cy={_intr.ppy:.2f}")
+    _color_profile = _profile.get_stream(rs.stream.color).as_video_stream_profile()
+    _intr = _color_profile.get_intrinsics()
+    try:
+        _serial = _profile.get_device().get_info(rs.camera_info.serial_number)
+    except Exception:
+        _serial = None
+    _current_metadata = build_metadata(_intr, CAMERA_WIDTH, CAMERA_HEIGHT, 30, _serial)
+    validate_device_against_metadata(capture_metadata, _current_metadata)
+    print(
+        f"[内参] 已校验当前 RealSense ({CAMERA_WIDTH}x{CAMERA_HEIGHT}) 与采集内参一致: "
+        f"fx={_intr.fx:.2f} fy={_intr.fy:.2f} cx={_intr.ppx:.2f} cy={_intr.ppy:.2f}"
+    )
+except CalibrationMetadataError:
+    raise
 except Exception as _e:
-    print(f"[内参] D435 未连接，使用 1280x720 兜底值: {_e}")
-    camera_matrix = np.array([[1212.0, 0.0, 636.0],
-                              [0.0, 1212.0, 500.0],
-                              [0.0, 0.0, 1.0]], dtype=np.float64)
-    dist_coeffs = np.zeros((5, 1), dtype=np.float64)
+    print(f"[内参] 当前设备不可用，使用本批次保存的采集内参: {_e}")
+finally:
+    if _pipeline is not None:
+        try:
+            _pipeline.stop()
+        except Exception:
+            pass
 
 
 # ==============================================================================

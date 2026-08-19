@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -50,6 +51,7 @@ else:
 
 class WorkflowWorker(QObject):
     log = pyqtSignal(str)
+    progress = pyqtSignal(str, str)
     finished = pyqtSignal(object)
     failed = pyqtSignal(str)
 
@@ -65,9 +67,9 @@ class WorkflowWorker(QObject):
 
 
 class MainWindow(QWidget):
-    def __init__(self):
+    def __init__(self, config_path: str | Path | None = None):
         super().__init__()
-        self.config = load_config()
+        self.config = load_config(config_path)
         self.workflow = CompetitionWorkflow(self.config, logger=self.append_log)
         self.last_frame_time = None
         self.current_fps = 0.0
@@ -100,7 +102,8 @@ class MainWindow(QWidget):
         self.append_log(message)
 
     def init_ui(self) -> None:
-        self.setWindowTitle("2026睿抗机器人大赛黑龙江赛区 - 机器视觉分拣系统")
+        title = self.config.get("competition", {}).get("name", "机器视觉分拣系统")
+        self.setWindowTitle(str(title))
         self.resize(1540, 920)
         self.setMinimumSize(1280, 780)
         self.setStyleSheet(
@@ -533,11 +536,11 @@ class MainWindow(QWidget):
                 "指令下发"
             ):
                 return
-            target = self.workflow.calculate_grasp()
+            payload, reply = self.workflow.send_grasp_command()
             self.refresh_target_info()
             self.append_log(
-                "指令下发预览：将发送抓取位姿 "
-                + str([round(v, 3) for v in target.base_pose])
+                "指令下发TCP JSON: "
+                + json.dumps(payload, ensure_ascii=False) + f" | ACK={reply.raw}"
             )
             self.update_task(5, "已下发")
 
@@ -899,6 +902,7 @@ class MainWindow(QWidget):
             self.workflow.camera.stop()
         except Exception:
             pass
+        self.workflow.vision_studio.close()
         event.accept()
 
     def to_pixmap(

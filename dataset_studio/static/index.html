@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dataset Studio</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>Dataset Studio</h1>
+      <div id="projectTitle" class="subtitle">field_dataset</div>
+    </div>
+    <nav class="view-tabs" aria-label="工作区">
+      <button class="tab-button active" data-view="annotateView">采集与标注</button>
+      <button class="tab-button" data-view="trainingView">训练与模型</button>
+    </nav>
+    <div class="header-status">
+      <span id="connectionDot" class="status-dot"></span>
+      <span id="connectionText">正在连接</span>
+    </div>
+  </header>
+
+  <main>
+    <section id="annotateView" class="view active">
+      <aside class="left-panel panel">
+        <section class="panel-section">
+          <h2>项目</h2>
+          <label for="projectName">名称</label>
+          <input id="projectName" type="text" maxlength="80">
+          <label for="classNames">类别顺序</label>
+          <input id="classNames" type="text" placeholder="part_a, part_b">
+          <button id="saveProjectButton" class="secondary command">保存项目设置</button>
+        </section>
+
+        <section class="panel-section capture-section">
+          <div class="section-heading">
+            <h2>采集</h2>
+            <span id="cameraMode" class="badge">-</span>
+          </div>
+          <div class="camera-preview">
+            <img id="cameraPreview" alt="相机预览">
+            <div id="cameraPlaceholder">相机预览未启动</div>
+          </div>
+          <div class="button-row">
+            <button id="previewButton" class="secondary command">刷新预览</button>
+            <button id="captureButton" class="primary command">拍摄并加入</button>
+          </div>
+          <label class="upload-button command" for="uploadInput">导入已有图片</label>
+          <input id="uploadInput" type="file" accept="image/*" multiple hidden>
+        </section>
+
+        <section class="panel-section queue-section">
+          <div class="section-heading">
+            <h2>图片队列</h2>
+            <button id="nextPendingButton" class="small command">领取下一张</button>
+          </div>
+          <div class="summary-strip">
+            <span><strong id="totalCount">0</strong> 总数</span>
+            <span><strong id="doneCount">0</strong> 完成</span>
+            <span><strong id="pendingCount">0</strong> 待标</span>
+          </div>
+          <div id="imageQueue" class="image-queue"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <div class="workspace-toolbar panel">
+          <div class="identity-field">
+            <label for="clientName">标注员</label>
+            <input id="clientName" type="text" maxlength="40">
+          </div>
+          <div id="currentImageName" class="current-image-name">未选择图片</div>
+          <div class="toolbar-actions">
+            <button id="undoButton" class="secondary command" disabled>撤销</button>
+            <button id="deleteBoxButton" class="secondary command" disabled>删除框</button>
+            <button id="deleteImageButton" class="danger command" disabled>删除图片</button>
+          </div>
+        </div>
+
+        <div id="canvasShell" class="canvas-shell panel empty">
+          <canvas id="annotationCanvas" width="640" height="480"></canvas>
+          <div id="emptyCanvasText">从左侧领取或选择一张图片</div>
+        </div>
+
+        <div class="save-bar panel">
+          <label for="activeClass">当前类别</label>
+          <select id="activeClass"></select>
+          <label class="checkbox-label">
+            <input id="negativeCheck" type="checkbox">
+            无目标负样本
+          </label>
+          <div class="save-actions">
+            <button id="saveButton" class="secondary command" disabled>保存</button>
+            <button id="saveNextButton" class="primary command" disabled>保存并下一张</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="right-panel panel">
+        <section class="panel-section">
+          <h2>类别</h2>
+          <div id="classPalette" class="class-palette"></div>
+        </section>
+        <section class="panel-section box-section">
+          <div class="section-heading">
+            <h2>标注框</h2>
+            <span id="boxCount" class="badge">0</span>
+          </div>
+          <div id="boxList" class="box-list"></div>
+        </section>
+        <section class="panel-section">
+          <h2>局域网地址</h2>
+          <div id="serverUrls" class="server-urls"></div>
+        </section>
+      </aside>
+    </section>
+
+    <section id="trainingView" class="view training-layout">
+      <aside class="training-controls panel">
+        <section class="panel-section">
+          <h2>数据就绪度</h2>
+          <div id="trainingSummary" class="metric-grid"></div>
+          <div id="classCounts" class="class-counts"></div>
+        </section>
+        <section class="panel-section">
+          <h2>训练参数</h2>
+          <label for="baseModel">基础模型</label>
+          <select id="baseModel"></select>
+          <div class="form-grid">
+            <label>轮数<input id="epochs" type="number" min="1" max="1000" value="100"></label>
+            <label>图像尺寸<input id="imgsz" type="number" min="128" max="2048" value="640"></label>
+            <label>批大小<input id="batch" type="number" min="1" max="256" value="8"></label>
+            <label>早停耐心<input id="patience" type="number" min="0" max="500" value="30"></label>
+            <label>验证集比例<input id="valRatio" type="number" min="0.05" max="0.5" step="0.05" value="0.2"></label>
+            <label>设备<select id="device"><option value="">自动</option><option value="0">GPU 0</option><option value="cpu">CPU</option></select></label>
+          </div>
+          <div class="button-row">
+            <button id="startTrainingButton" class="primary command">开始训练</button>
+            <button id="cancelTrainingButton" class="danger command" disabled>停止训练</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="training-output panel">
+        <div class="training-header">
+          <div>
+            <h2>训练状态</h2>
+            <div id="trainingMessage" class="subtitle">尚未开始训练</div>
+          </div>
+          <span id="trainingState" class="state-badge idle">IDLE</span>
+        </div>
+        <div id="modelOutput" class="model-output"></div>
+        <pre id="trainingLog" class="training-log">等待训练日志</pre>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

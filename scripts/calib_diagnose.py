@@ -12,13 +12,19 @@
 """
 import cv2, numpy as np, glob, os, math, itertools
 
+from calib_metadata import load_metadata, validate_existing_images
+
 CHECKERBOARD = (8, 11)
 SQUARE_SIZE  = 10.0
 IMAGE_DIR    = "runs/calib_data/images/"
 POSE_DIR     = "runs/calib_data/poses/"
-# 内参兜底值（与 calib_solve.py 保持一致；若有 D435 会更准，这里只为诊断够用）
-cam  = np.array([[606.21, 0, 317.80], [0, 606.35, 249.82], [0, 0, 1]], dtype=np.float64)
-dist = np.zeros((5, 1))
+METADATA_FILE = "runs/calib_data/camera_intrinsics.yaml"
+CAMERA_WIDTH = 640
+CAMERA_HEIGHT = 480
+
+# 诊断必须使用采集这批图像时保存的设备内参，禁止使用硬编码或其他配置文件。
+cam, dist, _capture_metadata = load_metadata(METADATA_FILE, CAMERA_WIDTH, CAMERA_HEIGHT)
+validate_existing_images(IMAGE_DIR, CAMERA_WIDTH, CAMERA_HEIGHT)
 
 
 def check_files():

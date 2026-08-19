@@ -24,10 +24,8 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 pipeline = rs.pipeline()
 config = rs.config()  # 准备向相机下发硬件配置指令
 
-# 【分辨率锁定】：1280x720 (720P)
-# 为什么不用更低的 640x480？因为标定板距离较远时，低分辨率会导致角点模糊，提取误差极大。
-# 为什么不用更高的 1920x1080？因为会导致传输带宽吃紧，引发画面卡顿。1280x720 是精度与帧率的完美平衡点。
-config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+# 【分辨率锁定】：与正式程序及自动手眼脚本统一为 640x480。
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 
 # 正式通电，唤醒相机硬件
 pipeline.start(config)

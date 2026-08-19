@@ -11,6 +11,7 @@
 保存位置：
   图片 → runs/calib_data/images/{n}.jpg
   位姿 → runs/calib_data/poses/{n}.txt  (格式: X Y Z Rx Ry Rz，单位 mm/度)
+  内参 → runs/calib_data/camera_intrinsics.yaml  (本批次 RealSense 640x480 彩色流)
 """
 from __future__ import annotations
 
@@ -24,18 +25,38 @@ import cv2
 import numpy as np
 import pyrealsense2 as rs
 
+from calib_metadata import (
+    build_metadata,
+    load_metadata,
+    metadata_path,
+    validate_device_against_metadata,
+    validate_existing_images,
+    write_metadata,
+)
+
 # ── 配置区（按实际修改） ────────────────────────────────────────────────────
 ROBOT_IP            = "192.168.5.1"
 ROBOT_PORT          = 29999
 ROBOT_TIMEOUT_S     = 3.0
 
 CHECKERBOARD        = (8, 11)   # 内角点 (宽, 高)，10x12方格的标定板
-CAMERA_WIDTH        = 1280
-CAMERA_HEIGHT       = 720
+CAMERA_WIDTH        = 640
+CAMERA_HEIGHT       = 480
 CAMERA_FPS          = 30
 
 SAVE_DIR_IMG        = "runs/calib_data/images"
 SAVE_DIR_POSE       = "runs/calib_data/poses"
+CALIB_DATA_DIR      = "runs/calib_data"
+
+
+def next_capture_index() -> int:
+    """从现有图像和位姿编号后继续，避免误覆盖旧的标定数据。"""
+    indices = []
+    for directory, suffix in ((Path(SAVE_DIR_IMG), ".jpg"), (Path(SAVE_DIR_POSE), ".txt")):
+        for path in directory.glob(f"*{suffix}"):
+            if path.stem.isdigit():
+                indices.append(int(path.stem))
+    return max(indices, default=0) + 1
 # ────────────────────────────────────────────────────────────────────────────
 
 
@@ -80,9 +101,41 @@ def main() -> int:
     pipeline = rs.pipeline()
     config   = rs.config()
     config.enable_stream(rs.stream.color, CAMERA_WIDTH, CAMERA_HEIGHT, rs.format.bgr8, CAMERA_FPS)
-    pipeline.start(config)
+    profile = pipeline.start(config)
 
-    img_count = 1
+    color_profile = profile.get_stream(rs.stream.color).as_video_stream_profile()
+    intrinsics = color_profile.get_intrinsics()
+    try:
+        serial_number = profile.get_device().get_info(rs.camera_info.serial_number)
+    except Exception:
+        serial_number = None
+    current_metadata = build_metadata(
+        intrinsics, CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS, serial_number
+    )
+    metadata_file = metadata_path(CALIB_DATA_DIR)
+    try:
+        validate_existing_images(SAVE_DIR_IMG, CAMERA_WIDTH, CAMERA_HEIGHT)
+        if metadata_file.exists():
+            _, _, saved_metadata = load_metadata(metadata_file, CAMERA_WIDTH, CAMERA_HEIGHT)
+            validate_device_against_metadata(saved_metadata, current_metadata)
+        elif list(Path(SAVE_DIR_IMG).glob("*.jpg")):
+            raise RuntimeError(
+                "已有手眼图像但缺少对应内参文件，请在手眼工具中先归档旧数据"
+            )
+        else:
+            write_metadata(metadata_file, current_metadata)
+    except Exception:
+        pipeline.stop()
+        raise
+    print(
+        f"[内参] 使用 RealSense 当前彩色流内参 {CAMERA_WIDTH}x{CAMERA_HEIGHT}: "
+        f"fx={intrinsics.fx:.2f} fy={intrinsics.fy:.2f} "
+        f"cx={intrinsics.ppx:.2f} cy={intrinsics.ppy:.2f}"
+    )
+
+    img_count = next_capture_index()
+    if img_count > 1:
+        print(f"检测到旧数据，将从第 {img_count} 组继续，不会覆盖已有文件。")
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
     print("\n[操作说明]")

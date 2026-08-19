@@ -1,0 +1,65 @@
+# RAICOM 2026 黑龙江赛区机器视觉分拣赛配置
+mode: hardware # simulation / hardware
+
+camera:
+  width: 640
+  height: 480
+  fps: 30
+  min_valid_depth_mm: 150
+  max_valid_depth_mm: 900
+
+model:
+  weights: models/fruit_best.pt
+  fallback_weights: models/yolov8s.pt
+  conf_threshold: 0.45
+  class_names: [apple, banana, strawberry, grape]
+
+robot:
+  ip: 192.168.5.1
+  dashboard_port: 29999
+  connect_timeout_s: 2.0
+  request_control_before_enable: true
+  user: 0
+  tool: 0
+  speed_percent: 25
+  accel_percent: 25
+  safe_z_mm: 180.0
+  grasp_clearance_mm: 18.0
+  suction_tool_do: 1
+  suction_do: 1
+  suction_io_type: both # tool_do / do / both，ES01接控制柜DO时用do或both
+  suction_on_level: 1
+  suction_off_level: 0
+  emergency_stop_mode: stop # stop / emergency_stop
+  home_pose: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
+  fixed_test_pose: [289.1093, -266.8951, 98.6003, 178.0137, -0.8, -34.75]
+  bins:
+    apple: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
+    banana: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
+    strawberry: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
+    grape: [-52.7949, -165.0936, 407.0568, 144.7450, 8.7403, -67.3405]
+
+calibration:
+  hand_eye_yaml: configs/20260610.yaml
+  camera_matrix:
+    fx: 615.0
+    fy: 615.0
+    cx: 320.0
+    cy: 240.0
+  transform_camera_to_gripper:
+    - [0.7218742278, 0.6919286206, -0.0115057948, -72.7322748581]
+    - [-0.6919621455, 0.7219324330, 0.0013969538, -38.3275375922]
+    - [0.0092729987, 0.0069531495, 0.9999328303, 24.3234046605]
+    - [0.0, 0.0, 0.0, 1.0]
+
+height:
+  table_depth_mm: 420.0
+  roi_ratio: 0.35
+  min_height_mm: 15.0
+  max_height_mm: 60.0
+  smoothing_window: 5
+
+workflow:
+  auto_max_objects: 4
+  auto_empty_frames_to_finish: 8
+  command_json_log: true

@@ -30,8 +30,23 @@ class Detection:
 
 
 @dataclass
+class OrientationEstimate:
+    angle_deg: float = 0.0
+    valid: bool = False
+    confidence: float = 0.0
+    period_deg: float = 180.0
+    reason: str = ""
+
+
+@dataclass
 class TargetResult:
     detection: Detection
     height_mm: float
     camera_xyz_mm: tuple[float, float, float]
     base_pose: list[float]
+    angle_deg: float = 0.0
+    angle_valid: bool = True
+    angle_confidence: float = 1.0
+    angle_reason: str = ""
+    grasp_pixel: tuple[int, int] | None = None
+    pose_point_count: int = 0
